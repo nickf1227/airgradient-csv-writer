@@ -98,9 +98,6 @@ As of 2/8/2025, the schema this script is expecting is:
 | model               | String | Current model name                                                                                    |
 
 
-## License
-
-This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
 
 ## Contributing
 
@@ -108,9 +105,3 @@ Feel free to fork this project and submit pull requests for improvements or addi
 
 ---
 
-Happy logging!
-```
-
----
-
-You can save this content as `README.md` in your project directory. Adjust any sections as needed for your use case.
