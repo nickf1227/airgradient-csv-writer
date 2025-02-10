@@ -68,35 +68,8 @@ def initialize_csv(url, output_file):
             exit(1)
 
 def get_samples(url, num_samples, sample_interval):
-  """
+    """
     Get multiple samples from the sensor API.
-    
-    This function collects a specified number of samples from the sensor API,
-    with a delay between each sample. This approach is necessary because the
-    sensor readings can vary significantly over short periods, as shown in the example:
-    
-    2025-02-09 13:08:01 pm02Compensated: 948.89
-    2025-02-09 13:08:04 pm02Compensated: 1136.21
-    2025-02-09 13:08:07 pm02Compensated: 1264.21
-    2025-02-09 13:08:10 pm02Compensated: 1334.69
-    2025-02-09 13:08:13 pm02Compensated: 1279.43
-    2025-02-09 13:08:16 pm02Compensated: 1087.97
-    2025-02-09 13:08:20 pm02Compensated: 980.06
-    2025-02-09 13:08:23 pm02Compensated: 771.77
-    2025-02-09 13:08:26 pm02Compensated: 681.78
-    2025-02-09 13:08:29 pm02Compensated: 526.86
-    2025-02-09 13:08:32 pm02Compensated: 459.74
-    2025-02-09 13:08:35 pm02Compensated: 340.83
-    2025-02-09 13:08:38 pm02Compensated: 293.2
-    2025-02-09 13:08:41 pm02Compensated: 200.2
-    2025-02-09 13:08:44 pm02Compensated: 162.82
-    2025-02-09 13:08:47 pm02Compensated: 123.25
-    2025-02-09 13:08:50 pm02Compensated: 107.01
-    2025-02-09 13:08:53 pm02Compensated: 81.47
-    2025-02-09 13:08:56 pm02Compensated: 62.87
-    2025-02-09 13:08:59 pm02Compensated: 55.92
-    
-    By taking multiple samples and averaging them, we can obtain a more stable and accurate reading.
     """
     samples = []
     for _ in range(num_samples):
