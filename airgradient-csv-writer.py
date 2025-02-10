@@ -12,7 +12,7 @@ OUTPUT_CSV = "./airgradient.csv"             # Output CSV file path
 INTERVAL = 60                                # Interval in seconds between queries
 NAME = "Basement"                            # Custom name to include in CSV
 SAMPLES_PER_INTERVAL = 12                    # Number of samples to take per interval
-SAMPLE_INTERVAL = 3                          # Interval in seconds between each sample
+SAMPLE_INTERVAL = 3                          # Interval in seconds between each sample. A value of less than 3 will not help, as the device only refreshes every 3s.
 
 def initialize_csv(url, output_file):
     """
