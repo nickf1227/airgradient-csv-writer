@@ -114,13 +114,8 @@ def get_samples(url, num_samples, sample_interval):
 
 def average_samples(samples):
     """
-    Average the samples, discarding the highest and lowest values.
-    
-    This approach helps to mitigate the impact of outliers and provides a more
-    accurate representation of the sensor data. If there are fewer than 3 samples,
-    an error is raised.
-
-    Skips non-numeric fields
+    Average the samples, discarding the highest and lowest numeric values.
+    Skips non-numeric fields.
     """
     if len(samples) < 3:
         raise ValueError("Not enough samples to average")
