@@ -87,20 +87,25 @@ def get_samples(url, num_samples, sample_interval):
 
 def average_samples(samples):
     """
-    Average the samples, discarding the highest and lowest numeric values.
-    Skips non-numeric fields.
+    For each key in the samples:
+      - If numeric values exist and there are at least 3 values, discard the highest and lowest,
+        average the remainder, and round the result to 2 decimal places.
+      - If there are numeric values but fewer than 3, average them and round the result.
+      - Otherwise, for non-numeric fields, use the first encountered non-numeric value.
     """
     if len(samples) < 3:
         raise ValueError("Not enough samples to average")
-
+    
     averaged_data = {}
-    # Collect all possible keys from all samples
+    # Get all unique keys from the samples
     keys = set()
     for sample in samples:
         keys.update(sample.keys())
-
+    
     for key in keys:
         numeric_values = []
+        non_numeric_value = None
+        
         for sample in samples:
             if key in sample:
                 value = sample[key]
@@ -109,14 +114,23 @@ def average_samples(samples):
                     num = float(value)
                     numeric_values.append(num)
                 except (ValueError, TypeError):
-                    # Skip non-numeric values
-                    pass
-        # Check if we have enough numeric values to average
+                    # Save the first non-numeric value encountered
+                    if non_numeric_value is None:
+                        non_numeric_value = value
+        
         if len(numeric_values) >= 3:
             numeric_values.sort()
-            trimmed = numeric_values[1:-1]  # Discard highest and lowest
+            trimmed = numeric_values[1:-1]  # Discard the highest and lowest
             avg = sum(trimmed) / len(trimmed)
-            averaged_data[key] = avg
+            averaged_data[key] = round(avg, 2)
+        elif numeric_values:
+            # Average if there are numeric values but fewer than 3 samples
+            avg = sum(numeric_values) / len(numeric_values)
+            averaged_data[key] = round(avg, 2)
+        elif non_numeric_value is not None:
+            # For non-numeric fields, just use the first encountered value
+            averaged_data[key] = non_numeric_value
+    
     return averaged_data
 
 def main():
@@ -137,11 +151,11 @@ def main():
             # Prepare the row with the configured timestamp and name.
             row = {'timestamp': current_time, 'name': NAME}
 
-            # Add sensor data, defaulting to empty string if missing
+            # Add sensor data, defaulting to an empty string if missing.
             for key in headers:
                 if key in ['timestamp', 'name']:
                     continue
-                row[key] = averaged_data.get(key, '')  # Empty string if key not averaged
+                row[key] = averaged_data.get(key, '')
 
             # Append the row to the CSV
             with open(OUTPUT_CSV, 'a', newline='') as f:
@@ -150,7 +164,7 @@ def main():
 
             print(f"Data logged at {current_time}")
 
-            # Calculate remaining time and sleep if needed
+            # Calculate remaining time and sleep if needed.
             elapsed_time = time.time() - start_time
             remaining_time = INTERVAL - elapsed_time
             if remaining_time > 0:
@@ -160,7 +174,7 @@ def main():
 
         except Exception as e:
             print(f"Unexpected error: {e}")
-            # Sleep a bit to avoid tight loop on repeated errors
+            # Sleep a bit to avoid a tight loop on repeated errors.
             time.sleep(10)
 
 if __name__ == '__main__':
