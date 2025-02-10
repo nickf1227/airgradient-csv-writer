@@ -12,17 +12,14 @@ OUTPUT_CSV = "./airgradient.csv"             # Output CSV file path
 INTERVAL = 60                                # Interval in seconds between queries
 NAME = "Basement"                            # Custom name to include in CSV
 SAMPLES_PER_INTERVAL = 12                    # Number of samples to take per interval
-SAMPLE_INTERVAL = 3                          # Interval in seconds between each sample. A value of less than 3 will not help, as the device only refreshes every 3s.
+SAMPLE_INTERVAL = 3                          # Interval in seconds between each sample
 
 def initialize_csv(url, output_file):
     """
     Initialize the CSV file.
-    
     If the file already exists, read and return its headers.
     Otherwise, perform an initial API request to determine the sensor data schema,
     sort the keys alphabetically, and force 'name' and 'serialno' (if present) in the desired order.
-    
-    This approach ensures that the CSV file is correctly formatted and ready to store data.
     """
     if os.path.isfile(output_file):
         try:
@@ -71,7 +68,7 @@ def initialize_csv(url, output_file):
             exit(1)
 
 def get_samples(url, num_samples, sample_interval):
-    """
+  """
     Get multiple samples from the sensor API.
     
     This function collects a specified number of samples from the sensor API,
@@ -122,31 +119,49 @@ def average_samples(samples):
     This approach helps to mitigate the impact of outliers and provides a more
     accurate representation of the sensor data. If there are fewer than 3 samples,
     an error is raised.
+
+    Skips non-numeric fields
     """
     if len(samples) < 3:
         raise ValueError("Not enough samples to average")
 
     averaged_data = {}
-    for key in samples[0].keys():
-        values = [sample[key] for sample in samples if key in sample]
-        if len(values) < 3:
-            continue
-        values.sort()
-        values = values[1:-1]  # Discard the highest and lowest values
-        averaged_data[key] = sum(values) / len(values)
+    # Collect all possible keys from all samples
+    keys = set()
+    for sample in samples:
+        keys.update(sample.keys())
+
+    for key in keys:
+        numeric_values = []
+        for sample in samples:
+            if key in sample:
+                value = sample[key]
+                try:
+                    # Attempt to convert to float
+                    num = float(value)
+                    numeric_values.append(num)
+                except (ValueError, TypeError):
+                    # Skip non-numeric values
+                    pass
+        # Check if we have enough numeric values to average
+        if len(numeric_values) >= 3:
+            numeric_values.sort()
+            trimmed = numeric_values[1:-1]  # Discard highest and lowest
+            avg = sum(trimmed) / len(trimmed)
+            averaged_data[key] = avg
     return averaged_data
 
 def main():
     headers = initialize_csv(URL, OUTPUT_CSV)
 
-    # Main collection loop: query the sensor API and log data continuously.
+    # Main collection loop
     while True:
         try:
+            start_time = time.time()
             samples = get_samples(URL, SAMPLES_PER_INTERVAL, SAMPLE_INTERVAL)
             if len(samples) < SAMPLES_PER_INTERVAL:
                 print("Not enough samples collected; skipping entry.")
-                time.sleep(INTERVAL)
-                continue
+                continue  # Skip to next iteration without sleeping full INTERVAL
 
             averaged_data = average_samples(samples)
             current_time = datetime.now().isoformat()
@@ -154,24 +169,31 @@ def main():
             # Prepare the row with the configured timestamp and name.
             row = {'timestamp': current_time, 'name': NAME}
 
-            # Validate and add sensor data for each expected field.
+            # Add sensor data, defaulting to empty string if missing
             for key in headers:
                 if key in ['timestamp', 'name']:
                     continue
-                row[key] = averaged_data.get(key, '')
+                row[key] = averaged_data.get(key, '')  # Empty string if key not averaged
 
-            # Append the row to the CSV.
+            # Append the row to the CSV
             with open(OUTPUT_CSV, 'a', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=headers)
                 writer.writerow(row)
 
             print(f"Data logged at {current_time}")
 
+            # Calculate remaining time and sleep if needed
+            elapsed_time = time.time() - start_time
+            remaining_time = INTERVAL - elapsed_time
+            if remaining_time > 0:
+                time.sleep(remaining_time)
+            else:
+                print("Warning: Sampling took longer than the interval. Proceeding immediately.")
+
         except Exception as e:
             print(f"Unexpected error: {e}")
-
-        # Wait for the next interval.
-        time.sleep(INTERVAL - (SAMPLES_PER_INTERVAL * SAMPLE_INTERVAL))
+            # Sleep a bit to avoid tight loop on repeated errors
+            time.sleep(10)
 
 if __name__ == '__main__':
     main()
