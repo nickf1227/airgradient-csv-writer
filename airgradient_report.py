@@ -286,30 +286,35 @@ def main():
         report_lines.append("=" * 70)
         report_lines.append("")
 
-        # Time-of-Day breakdown with metric indicated in header.
-        report_lines.append("## TIME-OF-DAY BREAKDOWN for {} (Last 7 Days) ##".format(name))
-        report_lines.append("   (This section breaks down the metric statistics into different parts of the day.)")
-        report_lines.append("-" * 70)
-        for seg_name, _ in segments.items():
-            seg_stat = stats["segment_stats"].get(seg_name)
-            report_lines.append("[ {} ]".format(seg_name))
-            if seg_stat:
-                report_lines.append("   Count: {}".format(seg_stat["count"]))
-                report_lines.append("   Average: {:.2f}".format(seg_stat["avg"]))
-                report_lines.append("   Median: {:.2f}".format(seg_stat["median"]))
-                report_lines.append("   Min: {:.2f}".format(seg_stat["min"]))
-                report_lines.append("   Max: {:.2f}".format(seg_stat["max"]))
-                report_lines.append("   Std Dev: {:.2f}".format(seg_stat["std_dev"]))
-                report_lines.append("   Range: {:.2f}".format(seg_stat["range"]))
+    # Time-of-day breakdown for each metric.
+    report_lines.append("## TIME-OF-DAY BREAKDOWN for {} (Last 7 Days) ##".format(name))
+    report_lines.append("   (This section breaks down the metric statistics into different parts of the day.)")
+    report_lines.append("-" * 70)
+    for seg_name, _ in segments.items():
+        seg_stat = stats["segment_stats"].get(seg_name)
+        report_lines.append("[ {} - {} ]".format(seg_name, name))  # Updated header
+        if seg_stat:
+            report_lines.append("   Count: {}".format(seg_stat["count"]))
+            report_lines.append("   Average: {:.2f}".format(seg_stat["avg"]))
+            # Calculate trend vs 7-day average
+            seven_day_avg = stats["rolling_7d"]
+            if seven_day_avg is not None and seven_day_avg != 0 and seg_stat["avg"] is not None:
+                trend_pct = ((seg_stat["avg"] - seven_day_avg) / seven_day_avg) * 100
+                report_lines.append("   Trend vs 7-day Avg: {:+.2f}%".format(trend_pct))
             else:
-                report_lines.append("   No data available.")
-            report_lines.append("-" * 70)
-        report_lines.append("#" * 70)
-        report_lines.append("")
-    
-    # Print the report to the shell.
-    for line in report_lines:
-        print(line)
+                report_lines.append("   Trend vs 7-day Avg: N/A")
+            report_lines.append("   Median: {:.2f}".format(seg_stat["median"]))
+            report_lines.append("   Min: {:.2f}".format(seg_stat["min"]))
+            report_lines.append("   Max: {:.2f}".format(seg_stat["max"]))
+            report_lines.append("   Std Dev: {:.2f}".format(seg_stat["std_dev"]))
+            report_lines.append("   Range: {:.2f}".format(seg_stat["range"]))
+        else:
+            report_lines.append("   No data available.")
+        report_lines.append("-" * 70)
+
+# Print the report to the shell.
+for line in report_lines:
+    print(line)
 
 if __name__ == "__main__":
     main()
