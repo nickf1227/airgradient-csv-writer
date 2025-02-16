@@ -4,7 +4,7 @@ import csv
 import datetime
 import sys
 import statistics
-from datetime import timedelta
+from datetime import timedelta, time
 
 def format_timestamp(ts):
     """Format a datetime object to a human-readable string."""
@@ -27,9 +27,9 @@ def parse_csv(file_path):
             reader = csv.DictReader(csvfile)
             for row in reader:
                 try:
-                    # Parse timestamp (expects ISO format, e.g. "2025-02-08T23:13:23.004531")
+                    # Parse timestamp (expects ISO format)
                     ts = datetime.datetime.fromisoformat(row["timestamp"])
-                    # Convert atmpCompensated from Celsius to Fahrenheit.
+                    # Convert temperature from Celsius to Fahrenheit.
                     temp_c = float(row["atmpCompensated"])
                     temp_f = temp_c * 9 / 5 + 32
                     # Convert other fields to floats.
@@ -128,6 +128,36 @@ def detect_outliers(data, metric):
     outliers.sort(key=lambda x: abs(x[0] - med), reverse=True)
     return outliers[:5]
 
+def compute_segment_stats(data, metric, window_days, current_time, seg_start, seg_end):
+    """
+    Compute statistics for a given metric for entries whose time-of-day falls between
+    seg_start and seg_end over the last window_days.
+    Returns a dict with average, median, count, std_dev, min, max, and range.
+    """
+    window_start = current_time - timedelta(days=window_days)
+    # Filter entries that fall within the window and time segment.
+    subset = [entry for entry in data 
+              if window_start <= entry["timestamp"] <= current_time 
+              and seg_start <= entry["timestamp"].time() < seg_end]
+    if not subset:
+        return None
+    values = [entry[metric] for entry in subset]
+    avg = sum(values) / len(values)
+    median_val = statistics.median(values)
+    count = len(values)
+    std_dev = statistics.stdev(values) if count > 1 else 0
+    min_val = min(values)
+    max_val = max(values)
+    return {
+        "avg": avg,
+        "median": median_val,
+        "count": count,
+        "std_dev": std_dev,
+        "min": min_val,
+        "max": max_val,
+        "range": max_val - min_val
+    }
+
 def main():
     parser = argparse.ArgumentParser(description="Generate an ASCII report from an Air Gradient CSV file.")
     parser.add_argument("--file", default="/mnt/fire/tn_scripts/airgradient.csv",
@@ -143,7 +173,7 @@ def main():
     current_entry = data[-1]
     current_time = current_entry["timestamp"]
 
-    # Define the metrics we care about.
+    # Define the metrics and friendly names.
     metrics = ["atmpCompensated_F", "rhumCompensated", "tvocIndex", "rco2", "pm02Compensated"]
     metric_names = {
         "atmpCompensated_F": "Temperature (°F)",
@@ -153,23 +183,39 @@ def main():
         "pm02Compensated": "PM2.5 (µg/m³)"
     }
 
+    # Define time-of-day segments.
+    # Night: 00:00-06:00, Morning: 06:00-12:00, Afternoon: 12:00-18:00, Evening: 18:00-24:00.
+    segments = {
+        "Night": (time(0, 0), time(6, 0)),
+        "Morning": (time(6, 0), time(12, 0)),
+        "Afternoon": (time(12, 0), time(18, 0)),
+        "Evening": (time(18, 0), time(23, 59, 59))
+    }
+
     results = {}
+    # Compute overall stats and outliers per metric.
     for metric in metrics:
         current_value = current_entry[metric]
         avg_1d = compute_rolling_average(data, metric, 1, current_time)
         avg_7d = compute_rolling_average(data, metric, 7, current_time)
-        # Compute stats for the last 7 days.
+        # Overall window stats for the last 7 days.
         (min_val, min_ts, max_val, max_ts, median_val, count_7d, std_dev, range_val) = compute_window_stats(data, metric, 7, current_time)
-        # Compute outliers (using all available data)
+        # Outliers using all available data.
         outliers = detect_outliers(data, metric)
 
-        # Compute trend statistics if 7-day average is available and nonzero.
+        # Compute trend stats.
         if avg_7d and avg_7d != 0:
             trend_percent = ((avg_1d - avg_7d) / avg_7d) * 100
             deviation_percent = ((current_value - avg_7d) / avg_7d) * 100
         else:
             trend_percent = None
             deviation_percent = None
+
+        # Compute time-of-day segment stats for the last 7 days.
+        segment_stats = {}
+        for seg_name, (seg_start, seg_end) in segments.items():
+            seg_stat = compute_segment_stats(data, metric, 7, current_time, seg_start, seg_end)
+            segment_stats[seg_name] = seg_stat
 
         results[metric] = {
             "current_value": current_value,
@@ -186,73 +232,47 @@ def main():
             "range_7d": range_val,
             "trend_percent": trend_percent,
             "deviation_percent": deviation_percent,
-            "outliers": outliers
+            "outliers": outliers,
+            "segment_stats": segment_stats
         }
 
-    # Build the ASCII report with creative separators and reorganization.
+    # Build the ASCII report with creative separators.
     report_lines = []
-    report_lines.append("=" * 50)
-    report_lines.append("      Air Gradient Sensor Report")
-    report_lines.append("=" * 50)
+    report_lines.append("=" * 60)
+    report_lines.append("              Air Gradient Sensor Report")
+    report_lines.append("=" * 60)
     report_lines.append("File: {}".format(args.file))
     report_lines.append("Report Generated on: {}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    report_lines.append("=" * 50)
+    report_lines.append("=" * 60)
     report_lines.append("")
 
     for metric in metrics:
         name = metric_names.get(metric, metric)
         stats = results[metric]
-        report_lines.append("-" * 50)
+        report_lines.append("-" * 60)
         report_lines.append("[ Metric: {} ]".format(name))
-        report_lines.append("-" * 50)
+        report_lines.append("-" * 60)
         report_lines.append(">> Current Reading:")
         report_lines.append("   Value: {:.2f} at {}".format(
             stats["current_value"], format_timestamp(stats["current_timestamp"])))
         report_lines.append("")
         report_lines.append(">> Rolling Averages:")
-        if stats["rolling_1d"] is not None:
-            report_lines.append("   1-day: {:.2f}".format(stats["rolling_1d"]))
-        else:
-            report_lines.append("   1-day: N/A")
-        if stats["rolling_7d"] is not None:
-            report_lines.append("   7-day: {:.2f}".format(stats["rolling_7d"]))
-        else:
-            report_lines.append("   7-day: N/A")
+        report_lines.append("   1-day: {:.2f}".format(stats["rolling_1d"]) if stats["rolling_1d"] is not None else "   1-day: N/A")
+        report_lines.append("   7-day: {:.2f}".format(stats["rolling_7d"]) if stats["rolling_7d"] is not None else "   7-day: N/A")
         report_lines.append("")
         report_lines.append(">> Window Statistics (Last 7 Days):")
-        if stats["max_value_window"] is not None:
-            report_lines.append("   Highest: {:.2f} at {}".format(
-                stats["max_value_window"], format_timestamp(stats["max_timestamp_window"])))
-        else:
-            report_lines.append("   Highest: N/A")
-        if stats["min_value_window"] is not None:
-            report_lines.append("   Lowest: {:.2f} at {}".format(
-                stats["min_value_window"], format_timestamp(stats["min_timestamp_window"])))
-        else:
-            report_lines.append("   Lowest: N/A")
-        if stats["median_7d"] is not None:
-            report_lines.append("   Median: {:.2f}".format(stats["median_7d"]))
-        else:
-            report_lines.append("   Median: N/A")
+        report_lines.append("   Highest: {:.2f} at {}".format(
+            stats["max_value_window"], format_timestamp(stats["max_timestamp_window"])) if stats["max_value_window"] is not None else "   Highest: N/A")
+        report_lines.append("   Lowest: {:.2f} at {}".format(
+            stats["min_value_window"], format_timestamp(stats["min_timestamp_window"])) if stats["min_value_window"] is not None else "   Lowest: N/A")
+        report_lines.append("   Median: {:.2f}".format(stats["median_7d"]) if stats["median_7d"] is not None else "   Median: N/A")
         report_lines.append("   Count: {}".format(stats["count_7d"]))
-        if stats["std_dev_7d"] is not None:
-            report_lines.append("   Std Dev: {:.2f}".format(stats["std_dev_7d"]))
-        else:
-            report_lines.append("   Std Dev: N/A")
-        if stats["range_7d"] is not None:
-            report_lines.append("   Range: {:.2f}".format(stats["range_7d"]))
-        else:
-            report_lines.append("   Range: N/A")
+        report_lines.append("   Std Dev: {:.2f}".format(stats["std_dev_7d"]) if stats["std_dev_7d"] is not None else "   Std Dev: N/A")
+        report_lines.append("   Range: {:.2f}".format(stats["range_7d"]) if stats["range_7d"] is not None else "   Range: N/A")
         report_lines.append("")
         report_lines.append(">> Trend Analysis:")
-        if stats["trend_percent"] is not None:
-            report_lines.append("   Trend (1-day vs 7-day): {:+.2f}%".format(stats["trend_percent"]))
-        else:
-            report_lines.append("   Trend (1-day vs 7-day): N/A")
-        if stats["deviation_percent"] is not None:
-            report_lines.append("   Deviation from 7-day avg: {:+.2f}%".format(stats["deviation_percent"]))
-        else:
-            report_lines.append("   Deviation from 7-day avg: N/A")
+        report_lines.append("   Trend (1-day vs 7-day): {:+.2f}%".format(stats["trend_percent"]) if stats["trend_percent"] is not None else "   Trend: N/A")
+        report_lines.append("   Deviation from 7-day avg: {:+.2f}%".format(stats["deviation_percent"]) if stats["deviation_percent"] is not None else "   Deviation: N/A")
         report_lines.append("")
         report_lines.append(">> Outlier Analysis:")
         report_lines.append("   Top 5 Worst Outliers:")
@@ -262,7 +282,22 @@ def main():
             for idx, (value, ts) in enumerate(stats["outliers"], start=1):
                 report_lines.append("     {}. {:.2f} at {}".format(idx, value, format_timestamp(ts)))
         report_lines.append("")
-        report_lines.append("=" * 50)
+        report_lines.append(">> Time-of-Day Analysis (Last 7 Days):")
+        for seg_name in segments:
+            seg_stat = stats["segment_stats"].get(seg_name)
+            report_lines.append("   [{}]".format(seg_name))
+            if seg_stat:
+                report_lines.append("      Count: {}".format(seg_stat["count"]))
+                report_lines.append("      Avg: {:.2f}".format(seg_stat["avg"]))
+                report_lines.append("      Median: {:.2f}".format(seg_stat["median"]))
+                report_lines.append("      Min: {:.2f}".format(seg_stat["min"]))
+                report_lines.append("      Max: {:.2f}".format(seg_stat["max"]))
+                report_lines.append("      Std Dev: {:.2f}".format(seg_stat["std_dev"]))
+                report_lines.append("      Range: {:.2f}".format(seg_stat["range"]))
+            else:
+                report_lines.append("      No data available.")
+            report_lines.append("")
+        report_lines.append("=" * 60)
         report_lines.append("")
 
     # Print the report to the shell.
