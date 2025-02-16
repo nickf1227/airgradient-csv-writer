@@ -285,28 +285,33 @@ def main():
         report_lines.append("")
         report_lines.append("=" * 70)
         report_lines.append("")
-
-        # Time-of-Day breakdown with metric indicated in header.
-        report_lines.append("## TIME-OF-DAY BREAKDOWN for {} (Last 7 Days) ##".format(name))
-        report_lines.append("   (This section breaks down the metric statistics into different parts of the day.)")
-        report_lines.append("-" * 70)
-        for seg_name, _ in segments.items():
-            seg_stat = stats["segment_stats"].get(seg_name)
-            report_lines.append("[ {} ]".format(seg_name))
-            if seg_stat:
-                report_lines.append("   Count: {}".format(seg_stat["count"]))
-                report_lines.append("   Average: {:.2f}".format(seg_stat["avg"]))
-                report_lines.append("   Median: {:.2f}".format(seg_stat["median"]))
-                report_lines.append("   Min: {:.2f}".format(seg_stat["min"]))
-                report_lines.append("   Max: {:.2f}".format(seg_stat["max"]))
-                report_lines.append("   Std Dev: {:.2f}".format(seg_stat["std_dev"]))
-                report_lines.append("   Range: {:.2f}".format(seg_stat["range"]))
-            else:
-                report_lines.append("   No data available.")
-            report_lines.append("-" * 70)
-        report_lines.append("#" * 70)
-        report_lines.append("")
     
+    # Time-of-Day Trend Analysis
+    report_lines.append("## TIME-OF-DAY TREND ANALYSIS ##")
+    report_lines.append("   (This section provides trend analysis for different parts of the day.)")
+    report_lines.append("-" * 70)
+    for seg_name, (seg_start, seg_end) in segments.items():
+        report_lines.append("[ {} \"{} - {}\" ]".format(seg_name, seg_start.strftime("%H:%M"), seg_end.strftime("%H:%M")))
+        
+        for metric in metrics:
+            avg_1d_seg = compute_rolling_average([entry for entry in data if seg_start <= entry["timestamp"].time() < seg_end], metric, 1, current_time)
+            avg_7d_seg = compute_rolling_average([entry for entry in data if seg_start <= entry["timestamp"].time() < seg_end], metric, 7, current_time)
+            if avg_7d_seg and avg_7d_seg != 0:
+                trend_percent_seg = ((avg_1d_seg - avg_7d_seg) / avg_7d_seg) * 100
+                deviation_percent_seg = ((current_entry[metric] - avg_7d_seg) / avg_7d_seg) * 100
+            else:
+                trend_percent_seg = None
+                deviation_percent_seg = None
+
+            report_lines.append("   Metric: {}".format(metric_names[metric]))
+            report_lines.append("   1-day vs 7-day Trend: {} ".format("{:+.2f}%".format(trend_percent_seg) if trend_percent_seg is not None else "N/A"))
+            report_lines.append("   Deviation from 7-day Avg: {} ".format("{:+.2f}%".format(deviation_percent_seg) if deviation_percent_seg is not None else "N/A"))
+            report_lines.append("")
+
+        report_lines.append("-" * 70)
+    report_lines.append("=" * 70)
+    report_lines.append("")
+
     # Print the report to the shell.
     for line in report_lines:
         print(line)
